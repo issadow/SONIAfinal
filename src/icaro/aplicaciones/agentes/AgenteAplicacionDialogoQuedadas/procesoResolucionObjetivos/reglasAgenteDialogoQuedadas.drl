@@ -1,0 +1,689 @@
+import icaro.infraestructura.recursosOrganizacion.recursoTrazas.ItfUsoRecursoTrazas;
+import icaro.infraestructura.recursosOrganizacion.recursoTrazas.imp.componentes.InfoTraza;
+//import static icaro.aplicaciones.recursos.recursoCalendario.imp.RecursoCalendarioImp.*;
+import static icaro.aplicaciones.recursos.persistenciaUsuarios.imp.PersistenciaUsuariosImp.*;
+import icaro.infraestructura.entidadesBasicas.procesadorCognitivo.*;
+import icaro.infraestructura.patronAgenteCognitivo.procesadorObjetivos.gestorTareas.ItfGestorTareas;
+import icaro.infraestructura.entidadesBasicas.PerformativaUsuario;
+import icaro.infraestructura.entidadesBasicas.comunicacion.*
+import icaro.aplicaciones.agentes.AgenteAplicacionDialogoPaciente.objetivos.*;
+import icaro.aplicaciones.informacion.gestionCitas.*;
+import icaro.aplicaciones.agentes.AgenteAplicacionIdentificador.objetivos.*;
+import icaro.aplicaciones.agentes.AgenteAplicacionIdentificador.tareas.*;
+import icaro.aplicaciones.agentes.AgenteAplicacionIdentificador.tools.*;
+import icaro.aplicaciones.informacion.gestionQuedadas.*;
+import icaro.aplicaciones.agentes.AgenteAplicacionDialogoQuedadas.objetivos.*;
+import icaro.aplicaciones.agentes.AgenteAplicacionDialogoQuedadas.tareas.*;
+import icaro.aplicaciones.agentes.AgenteAplicacionDialogoQuedadas.tools.*;
+import icaro.aplicaciones.recursos.recursoCalendario.DateUtil;
+import java.util.Calendar;
+
+global ItfGestorTareas gestorTareas;
+global ItfUsoRecursoTrazas recursoTrazas;
+global String agentId;
+
+
+/** REGLAS PARA MOSTRAR LA INFORMACION DE LA QUEDADA Y PEDIR SU CONFIRMACION **/
+rule "Mostrar informacion de la quedada y solicitar confirmacion"
+when
+	ob:ObtenerConfirmacion(chat:objectReferenceId, state == Objetivo.PENDING)
+	fc:FocoGrupo(grupo == chat, foco == null)
+	que:Quedada(idChat == chat)
+then
+
+    TareaSincrona tarea = gestorTareas.crearTareaSincrona(ConfirmarQuedada.class);
+    tarea.ejecutar(chat, que);
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	
+   	fc.setFoco(ob);
+   	update(fc);
+end
+
+
+rule "Recibir confirmacion de la quedada"
+when
+	ob:ObtenerConfirmacion(chat:objectReferenceId, state == Objetivo.PENDING)
+	fc:FocoGrupo(grupo == chat, foco == ob)
+	notif:NotificacionQuedada(identNotificador == chat, tipoNotificacion == tipoNotif.si, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+then
+	ob.setSolved();
+	// matching
+	// guardar la quedada en persistencia
+	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("confirmarQuedada"));
+    recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+	update(ob);
+	retract(notif);
+end
+
+rule "Recibir rechazo de la quedada"
+when
+	ob:ObtenerConfirmacion(chat:objectReferenceId, state == Objetivo.PENDING)
+	fc:FocoGrupo(grupo == chat, foco == ob)
+	notif:NotificacionQuedada(identNotificador == chat, tipoNotificacion == tipoNotif.no, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+then
+	ob.setSolved();
+    
+	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("rechazarQuedada"));
+    
+    // mandar mensaje al agnteidentificador para que borre la sesion
+        
+    recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+	retract(notif);
+end
+
+
+/** REGLAS PARA SOLICITAR Y RECIBIR LA FECHA Y HORA DE LA QUEDADA **/
+
+rule "Solicitar fecha de la quedada (día y hora)"
+ when
+ 	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.PENDING)
+ 	not( exists (ObtenerDiaQuedada(objectReferenceId == chat)))
+ 	not( exists (ObtenerHoraQuedada(objectReferenceId == chat)))
+ 	fc:FocoGrupo(grupo == chat, foco == null)
+ then
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat,ConversacionGrupo.msg("pedirFechayHora"));
+    
+ 	Objetivo id1 = new ObtenerDiaQuedada();
+ 	id1.setobjectReferenceId(chat);
+ 	Objetivo id2 = new ObtenerHoraQuedada();
+ 	id2.setobjectReferenceId(chat);
+ 	
+    insert(id1);
+    insert(id2);
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"EJECUTO LA REGLA: " + drools.getRule().getName());
+end
+
+rule "Obtener fecha de la quedada (día y hora)"
+ salience 40
+ when
+ 	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.PENDING || state == Objetivo.SOLVING)
+ 	ob1:ObtenerDiaQuedada(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	ob2:ObtenerHoraQuedada(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	fc:FocoGrupo(foco == null, grupo == chat)
+ 	notif:NotificacionQuedada(identNotificador == chat,
+ 			tipoNotificacion == tipoNotif.fecha || 
+ 			tipoNotificacion == tipoNotif.fechaAnterior || 
+ 			tipoNotificacion == tipoNotif.hora, 
+ 			msgg:mensajeNotificacion)
+ 	que:Quedada(idChat == chat)
+ then
+ 	if (notif.tipoNotificacion.equals(tipoNotif.fecha)){
+ 		que.setFecha(msgg);
+ 		ob1.setSolved();
+ 		update(ob1);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"DETECTADO DIA!!!");
+ 	}
+ 	else if (notif.tipoNotificacion.equals(tipoNotif.fechaAnterior)){
+ 		TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    	tarea.ejecutar(chat, ConversacionGrupo.msg("fechaAnterior"));
+    	fc.setFoco(ob1);
+    	ob1.setSolving();
+    	update(ob1);
+    	update(fc);
+ 	}
+ 	else { // notif.tipoNotificacion == tipoNotif.hora
+ 		que.setHora(msgg);
+ 		ob2.setSolved();
+ 		update(ob2);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"DETECTADA HORA!!!");
+ 	}
+ 	
+ 	if (ob1.getState() == Objetivo.SOLVED && ob2.getState() == Objetivo.SOLVED){
+ 		ob.setSolved();
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"OBJETIVO FECHA COMPLETA CONSEGUIDO!!!");
+ 		
+ 		Objetivo obConfirmacion = new ObtenerConfirmacion();
+ 		obConfirmacion.setobjectReferenceId(chat);
+ 		insert(obConfirmacion); 
+ 		
+ 	}
+ 	else
+ 		ob.setSolving();
+ 	
+ 	update(ob);
+ 	update(que);
+    retract(notif);
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"EJECUTO LA REGLA: " + drools.getRule().getName());
+end
+
+rule "Focalizar info restante de la fecha de la quedada"
+ timer( int: 1s )
+ when
+ 	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerDiaQuedada(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	ob2:ObtenerHoraQuedada(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	fc:FocoGrupo(foco == null, grupo == chat)
+ then
+ 	if (ob1.getState() == Objetivo.PENDING)
+ 		fc.setFoco(ob1);
+ 	else if (ob2.getState() == Objetivo.PENDING)
+ 		fc.setFoco(ob2);
+ 	
+ 	if (ob1.getState() == Objetivo.SOLVED && ob2.getState() == Objetivo.SOLVED){
+ 		ob.setSolved();
+ 		update(ob);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"OBJETIVO FECHA COMPLETA CONSEGUIDO!!!");
+ 		
+ 		fc.setFoco(null);
+ 		
+ 		Objetivo obConfirmacion = new ObtenerConfirmacion();
+ 		obConfirmacion.setobjectReferenceId(chat);
+ 		insert(obConfirmacion);
+ 	}
+ 	
+ 	update(fc);
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"EJECUTO LA REGLA: " + drools.getRule().getName());
+end
+
+rule "Solicitar día de la quedada"
+ when
+ 	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerDiaQuedada(objectReferenceId == chat, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob1)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	ob1.setSolving();
+  	
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("pedirFecha"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob1);
+end
+
+rule "Obtener día de la quedada"
+when
+	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerDiaQuedada(objectReferenceId == chat, state == Objetivo.SOLVING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob1)
+	notif:NotificacionQuedada(identNotificador == chat, tipoNotificacion == tipoNotif.fecha, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 	que.setFecha(msgg);
+ 	ob1.setSolved();
+ 	fc.setFoco(null);
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob1);
+   	update(que);
+   	update(fc);
+   	retract(notif);
+end
+
+rule "Obtención de un día anterior a hoy para hacer la quedada"
+when
+	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerDiaQuedada(objectReferenceId == chat, state == Objetivo.SOLVING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob1)
+	notif:NotificacionQuedada(identNotificador == chat, tipoNotificacion == tipoNotif.fechaAnterior, msgg:mensajeNotificacion )
+ then
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("fechaAnterior"));
+   	retract(notif);
+end
+
+rule "Solicitar hora de la quedada"
+ when
+ 	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob2:ObtenerHoraQuedada(objectReferenceId == chat, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob2)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	ob2.setSolving();
+  	
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("pedirHora"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob2);
+end
+
+rule "Obtener hora de la quedada"
+when
+	ob:ObtenerFechaQuedada(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob2:ObtenerHoraQuedada(objectReferenceId == chat, state == Objetivo.SOLVING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob2)
+	notif:NotificacionQuedada(identNotificador == chat, tipoNotificacion == tipoNotif.hora, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 	que.setHora(msgg);
+ 	ob2.setSolved();
+ 	fc.setFoco(null);
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob2);
+   	update(que);
+   	update(fc);
+   	retract(notif);
+end
+
+
+/** REGLAS PARA SOLICITAR Y RECIBIR EL LUGAR DONDE SE HARÁ LA QUEDADA**/
+rule "Solicitar dónde se quiere hacer la quedada"
+ when
+	ob:ObtenerDonde(chat:objectReferenceId, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == null)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	fc.setFoco(ob);
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("pedirDonde"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob);
+   	update(fc);
+end
+
+rule "Obtener donde se quiere hacer la quedada"
+when
+	ob:ObtenerDonde(chat:objectReferenceId, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob)
+	notif:NotificacionQuedada(identNotificador == chat, notificacion:tipoNotificacion, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 	
+ 	if ( notificacion.equals(tipoNotif.dondeHacer) ) {
+ 		ob.setSolved();
+	 	que.setLugar(msgg);
+	 	fc.setFoco(null);
+	    
+	    tarea.ejecutar(chat, ConversacionGrupo.msg("confirmacionDonde"));
+	   	
+	   	// Creamos el siguiente objetivo
+	   	Objetivo obFechaQuedada = new ObtenerFechaQuedada();
+	 	obFechaQuedada.setobjectReferenceId(chat);
+	 	insert(obFechaQuedada);
+	 		
+	   	update(ob);
+	   	update(que);
+	   	update(fc);
+ 	}
+ 	else if ( notificacion.equals(tipoNotif.meDaIgual) ) {
+ 		ob.setSolved();
+	 	que.setLugar(null);
+	 	fc.setFoco(null);
+	    
+	    tarea.ejecutar(chat, ConversacionGrupo.msg("confirmacionDonde"));
+	   	
+	   	// Creamos el siguiente objetivo
+	   	Objetivo obFechaQuedada = new ObtenerFechaQuedada();
+	 	obFechaQuedada.setobjectReferenceId(chat);
+	 	insert(obFechaQuedada);
+	 		
+	   	update(ob);
+	   	update(que);
+	   	update(fc);
+ 	
+ 	}
+ 	else {
+ 		tarea.ejecutar(chat, ConversacionGrupo.msg("imperativoDonde"));
+ 	} 
+
+    retract(notif);
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	
+end
+
+/** REGLAS PARA SOLICITAR Y RECIBIR QUÉ SE QUIERE HACER **/
+rule "Solicitar qué se quiere hacer en la quedada"
+ when
+	ob:ObtenerQueHacer(chat:objectReferenceId, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == null)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	fc.setFoco(ob);
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("pedirQueHacer"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob);
+   	update(fc);
+end
+
+
+rule "Obtener qué se quiere hacer en la quedada"
+when
+	ob:ObtenerQueHacer(chat:objectReferenceId, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob)
+	notif:NotificacionQuedada(identNotificador == chat, notificacion:tipoNotificacion, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 	
+ 	if ( notificacion.equals(tipoNotif.queHacer) ) {
+ 		ob.setSolved();
+	 	que.setQueHacer(msgg);
+	 	fc.setFoco(null);
+	    
+	    tarea.ejecutar(chat, ConversacionGrupo.msg("confirmacionQueHacer"));
+	   	
+	   	// Creamos el siguiente objetivo
+	   	Objetivo dondeHacer = new ObtenerDonde();
+	 	dondeHacer.setobjectReferenceId(chat);
+	 	insert(dondeHacer);
+	 		
+	   	update(ob);
+	   	update(que);
+	   	update(fc);
+ 	}
+ 	else if ( notificacion.equals(tipoNotif.meDaIgual) ) {
+ 		ob.setSolved();
+	 	que.setQueHacer(null);
+	 	fc.setFoco(null);
+	    
+	    tarea.ejecutar(chat, ConversacionGrupo.msg("confirmacionQueHacer"));
+	   	
+	   	// Creamos el siguiente objetivo
+	   	Objetivo dondeHacer = new ObtenerDonde();
+	 	dondeHacer.setobjectReferenceId(chat);
+	 	insert(dondeHacer);
+	 		
+	   	update(ob);
+	   	update(que);
+	   	update(fc);
+ 	
+ 	}
+ 	else {
+ 		tarea.ejecutar(chat, ConversacionGrupo.msg("imperativoQueHacer"));
+ 	} 
+ 
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	retract(notif);
+   	
+end
+
+
+rule "Recibir grupo identificado y solicitar info de otro grupo"
+ when
+ 	notif:NotificacionIdentificado(chat:identNotificador, gr:grupo)
+ then
+ 	Objetivo id = new IdentificarOtroGrupo();
+ 	id.setobjectReferenceId(chat);
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat,ConversacionGrupo.msg("pedirInfoOtroGrupo"));
+ 	Objetivo id1 = new ObtenerNumIntegrantesOtroGrupo();
+ 	id1.setobjectReferenceId(chat);
+ 	Objetivo id2 = new ObtenerEdadOtroGrupo();
+ 	id2.setobjectReferenceId(chat);
+ 	Objetivo id3 = new ObtenerSexoOtroGrupo();
+ 	id3.setobjectReferenceId(chat);
+ 	FocoGrupo fc = new FocoGrupo(chat);
+ 	Quedada que = new Quedada(chat, gr);
+ 	insert(fc);
+ 	insert(gr);
+ 	insert(que);
+    retract(notif);
+    insert(id);
+    insert(id1);
+    insert(id2);
+    insert(id3);
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"EJECUTO LA REGLA: " + drools.getRule().getName());
+end
+
+
+rule "Obtener info de otro grupo"
+ salience 40
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.PENDING || state == Objetivo.SOLVING)
+ 	ob1:ObtenerNumIntegrantesOtroGrupo(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	ob2:ObtenerEdadOtroGrupo(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	ob3:ObtenerSexoOtroGrupo(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	notif:NotificacionQuedada(identNotificador == chat,
+ 			tipoNotificacion == tipoNotif.numintegrantes || 
+ 			tipoNotificacion == tipoNotif.edad || 
+ 			tipoNotificacion == tipoNotif.sexo, 
+ 			msgg:mensajeNotificacion)
+ 	que:Quedada(idChat == chat)
+ then
+ 	if (notif.tipoNotificacion.equals(tipoNotif.numintegrantes)){
+ 		que.setNumIntegrantes(Integer.parseInt(msgg));
+ 		ob1.setSolved();
+ 		update(ob1);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"DETECTADO NUMINTEGRANTES!!!");
+ 	}
+ 	else if (notif.tipoNotificacion.equals(tipoNotif.edad)){
+ 		que.setEdad(Integer.parseInt(msgg));
+ 		ob2.setSolved();
+ 		update(ob2);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"DETECTADO EDAD!!!");	
+ 	}
+ 	else { // notif.tipoNotificacion == tipoNotif.sexo
+ 		que.setSexo(msgg);
+ 		ob3.setSolved();
+ 		update(ob3);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"DETECTADO SEXO!!!");
+ 	}
+ 	
+ 	if (ob1.getState() == Objetivo.SOLVED && ob2.getState() == Objetivo.SOLVED && ob3.getState() == Objetivo.SOLVED){
+ 		ob.setSolved();
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"OBJETIVO IDENTIFICAR OTRO GRUPO CONSEGUIDO!!!");
+ 		
+ 		Objetivo obQueHacer = new ObtenerQueHacer();
+ 		obQueHacer.setobjectReferenceId(chat);
+ 		insert(obQueHacer);
+ 	}
+ 	else
+ 		ob.setSolving();
+ 	
+ 	update(ob);
+ 	update(que);
+    retract(notif);
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"EJECUTO LA REGLA: " + drools.getRule().getName());
+end
+
+rule "Focalizar info restante de otro grupo"
+ timer( int: 1s )
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerNumIntegrantesOtroGrupo(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	ob2:ObtenerEdadOtroGrupo(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	ob3:ObtenerSexoOtroGrupo(objectReferenceId == chat, state != Objetivo.SOLVING)
+ 	fc:FocoGrupo(foco == null, grupo == chat)
+ then
+ 	if (ob1.getState() == Objetivo.PENDING)
+ 		fc.setFoco(ob1);
+ 	else if (ob2.getState() == Objetivo.PENDING)
+ 		fc.setFoco(ob2);
+ 	else if (ob3.getState() == Objetivo.PENDING)
+ 		fc.setFoco(ob3);
+ 	
+ 	if (ob1.getState() == Objetivo.SOLVED && ob2.getState() == Objetivo.SOLVED && ob3.getState() == Objetivo.SOLVED){
+ 		ob.setSolved();
+ 		update(ob);
+ 		recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"OBJETIVO IDENTIFICAR OTRO GRUPO CONSEGUIDO!!!");
+ 		
+ 		fc.setFoco(null);
+ 		
+ 		Objetivo obQueHacer = new ObtenerQueHacer();
+ 		obQueHacer.setobjectReferenceId(chat);
+ 		insert(obQueHacer);
+ 		
+ 	}
+ 	
+ 	update(fc);
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId,"EJECUTO LA REGLA: " + drools.getRule().getName());
+end
+
+/*** REGLAS PARA SOLICITAR Y RECIBIR EL NUMERO DE INTEGRANTES DEL OTRO GRUPO ***/
+rule "Solicitar numero integrantes del otro grupo"
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerNumIntegrantesOtroGrupo(objectReferenceId == chat, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob1)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	ob1.setSolving();
+  	
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat, ConversacionGrupo.msg("pedirInfoOtroGrupo_numIntegrantes"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob1);
+end
+
+rule "Obtener numero integrantes del otro grupo"
+when
+	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob1:ObtenerNumIntegrantesOtroGrupo(objectReferenceId == chat, state == Objetivo.SOLVING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob1)
+	notif:NotificacionQuedada(identNotificador == chat, notificacion:tipoNotificacion,  msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(ConfirmarNumIntegrantesOtroGrupo.class);
+ 	
+ 	if ( notificacion.equals(tipoNotif.numintegrantes) ) {
+ 		
+ 		if ( Integer.parseInt(msgg) == 0 ) {
+ 			TareaSincrona tarea3 = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 			tarea3.ejecutar(chat,ConversacionGrupo.msg("errorInfoOtroGrupo_numIntegrantes"));
+ 		}
+ 		else {
+ 			que.setNumIntegrantes(Integer.parseInt(msgg));
+ 			tarea.ejecutar(chat, Integer.parseInt(msgg));
+ 			fc.setFoco(null);
+ 			ob1.setSolved();
+ 			update(que);		
+ 			update(fc);
+ 			update(ob1);
+ 		} 
+ 	
+ 	}
+ 	else if ( notificacion.equals(tipoNotif.meDaIgual) ) {
+ 		que.setNumIntegrantes(-1);
+ 		tarea.ejecutar(chat, -1);
+ 		fc.setFoco(null);
+ 		ob1.setSolved();
+ 		update(que);
+ 		update(fc);
+ 		update(ob1);
+ 	}
+ 	else {
+		TareaSincrona tarea2 = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 		tarea2.ejecutar(chat,ConversacionGrupo.msg("imperativoInfoOtroGrupo_numIntegrantes"));
+ 	}
+ 	
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+ 	retract(notif);
+end
+
+
+/*** REGLAS PARA SOLICITAR Y RECIBIR LA EDAD DEL OTRO GRUPO ***/
+rule "Solicitar edad del otro grupo"
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob2:ObtenerEdadOtroGrupo(objectReferenceId == chat, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob2)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	ob2.setSolving();
+  	
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat,ConversacionGrupo.msg("pedirInfoOtroGrupo_edad"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob2);
+end
+
+rule "Obtener edad del otro grupo"
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob2:ObtenerEdadOtroGrupo(objectReferenceId == chat, state == Objetivo.SOLVING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob2)
+	notif:NotificacionQuedada(identNotificador == chat, notificacion:tipoNotificacion, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 	
+	TareaSincrona tarea = gestorTareas.crearTareaSincrona(ConfirmarEdadOtroGrupo.class);
+ 	
+ 	if ( notificacion.equals(tipoNotif.edad) ) {
+ 	
+ 		if ( Integer.parseInt(msgg) >= 18 ) {
+ 			que.setEdad(Integer.parseInt(msgg));
+	 		tarea.ejecutar(chat, Integer.parseInt(msgg));
+	 		fc.setFoco(null);
+	 		ob2.setSolved();
+	 		update(que);		
+	 		update(fc);
+	 		update(ob2);
+ 		}
+ 		else {
+ 			TareaSincrona tarea3 = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 			tarea3.ejecutar(chat,ConversacionGrupo.msg("errorInfoOtroGrupo_edad"));
+ 		}
+ 	
+ 		
+ 	}
+ 	else if ( notificacion.equals(tipoNotif.meDaIgual) ) {
+ 		que.setEdad(-1);
+ 		tarea.ejecutar(chat, -1);
+ 		fc.setFoco(null);
+ 		ob2.setSolved();
+ 		update(que);
+ 		update(fc);
+ 		update(ob2);
+ 	}
+ 	else {
+		TareaSincrona tarea2 = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 		tarea2.ejecutar(chat,ConversacionGrupo.msg("imperativoInfoOtroGrupo_edad"));
+ 	}
+ 	
+ 	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+ 	retract(notif);
+ 	
+end
+
+
+/*** REGLAS PARA SOLICITAR Y RECIBIR EL SEXO DEL OTRO GRUPO. ***/
+rule "Solicitar sexo del otro grupo"
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob3:ObtenerSexoOtroGrupo(objectReferenceId == chat, state == Objetivo.PENDING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob3)
+ then
+  	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTARA LA REGLA: " + drools.getRule().getName());
+  	ob3.setSolving();
+  	
+  	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+    tarea.ejecutar(chat,ConversacionGrupo.msg("pedirInfoOtroGrupo_sexo"));
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	update(ob3);
+end
+
+rule "Obtener sexo del otro grupo"
+ when
+ 	ob:IdentificarOtroGrupo(chat:objectReferenceId, state == Objetivo.SOLVING)
+ 	ob3:ObtenerSexoOtroGrupo(objectReferenceId == chat, state == Objetivo.SOLVING)
+ 	fc:FocoGrupo(grupo == chat, foco == ob3)
+	notif:NotificacionQuedada(identNotificador == chat, notificacion:tipoNotificacion, msgg:mensajeNotificacion )//, tipoNotificacion == tipoNotif.sexo || tipoNotificacion == tipoNotif.meDaIgual ||, msgg:mensajeNotificacion )
+	que:Quedada(idChat == chat)
+ then
+ 
+ 	TareaSincrona tarea = gestorTareas.crearTareaSincrona(MensajeGenerico.class);
+ 	
+ 	if ( notificacion.equals(tipoNotif.sexo) ) {
+ 		que.setSexo(msgg);
+ 		tarea.ejecutar(chat,ConversacionGrupo.msg("confirmacionInfoOtroGrupo_sexo"));
+ 		fc.setFoco(null);
+ 		ob3.setSolved();
+ 		update(que);		
+ 		update(fc);
+ 		update(ob3);
+ 	}
+ 	else if ( notificacion.equals(tipoNotif.meDaIgual) ) {
+ 		que.setSexo("sin_especificar");
+ 		tarea.ejecutar(chat,ConversacionGrupo.msg("confirmacionInfoOtroGrupo_sexo"));
+ 		fc.setFoco(null);
+ 		ob3.setSolved();
+ 		update(que);
+ 		update(fc);
+ 		update(ob3);
+ 	}
+ 	else {
+ 		tarea.ejecutar(chat,ConversacionGrupo.msg("imperativoInfoOtroGrupo_sexo"));
+ 	}
+ 	
+   	recursoTrazas.aceptaNuevaTrazaEjecReglas(agentId," EJECUTO LA REGLA: " + drools.getRule().getName());
+   	retract(notif);
+end
+
