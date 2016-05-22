@@ -42,7 +42,12 @@
 					localizacionComportamiento="icaro.aplicaciones.agentes.agenteAplicacionDialogoQuedadas"
 					localizacionFicheroReglas="icaro.aplicaciones.agentes.agenteAplicacionDialogoQuedadas.procesoResolucionObjetivos.reglasAgenteDialogoQuedadas.drl"
 					tipo="Cognitivo" />
-				
+				<!--<icaro:DescComportamientoAgente
+					nombreComportamiento="AgenteAplicacionGestionQuedadas" rol="AgenteAplicacion"
+					localizacionComportamiento="icaro.aplicaciones.agentes.agenteAplicacionGestionQuedadas"
+					localizacionFicheroReglas="icaro.aplicaciones.agentes.agenteAplicacionGestionQuedadas.procesoResolucionObjetivos.reglasAgenteGestionQuedadas.drl"
+					tipo="Cognitivo" />
+				-->
 				<!--	
 				<icaro:DescComportamientoAgente
 					nombreComportamiento="AgenteAplicacionDialogoPaciente" rol="AgenteAplicacion"
@@ -62,11 +67,18 @@
 			******************************************************************************************************** -->
 		<icaro:DescRecursosAplicacion>
 			<icaro:DescRecursoAplicacion nombre="ComunicacionChat"
-			localizacionClaseGeneradora="icaro.aplicaciones.recursos.comuSONIAChat.ClaseGeneradoraComuSONIAChat"/>
+				localizacionClaseGeneradora="icaro.aplicaciones.recursos.comuSONIAChat.ClaseGeneradoraComuSONIAChat"/>
 			<icaro:DescRecursoAplicacion nombre="PersistenciaUsuarios"
 				localizacionClaseGeneradora="icaro.aplicaciones.recursos.persistenciaUsuarios.ClaseGeneradoraPersistenciaUsuarios" />
 			<icaro:DescRecursoAplicacion nombre="PersistenciaGrupos"
 				localizacionClaseGeneradora="icaro.aplicaciones.recursos.persistenciaGrupos.ClaseGeneradoraPersistenciaGrupos" />
+			
+			<!--<icaro:DescRecursoAplicacion nombre="PersistenciaQuedadas"
+				localizacionClaseGeneradora="icaro.aplicaciones.recursos.persistenciaQuedadas.ClaseGeneradoraPersistenciaQuedadas" />
+			
+			<icaro:DescRecursoAplicacion nombre="PersistenciaMensajesGrupo"
+				localizacionClaseGeneradora="icaro.aplicaciones.recursos.persistenciaMensajesGrupo.ClaseGeneradoraPersistenciaMensajesGrupo" />
+			-->
 			<icaro:DescRecursoAplicacion nombre="ExtractorSemantico"
 				localizacionClaseGeneradora="icaro.aplicaciones.recursos.extractorSemantico.ClaseGeneradoraExtractorSemantico" />
 			<icaro:DescRecursoAplicacion nombre="RecursoCalendario"
@@ -97,9 +109,11 @@
 						tipoComponente="AgenteAplicacion" /> -->
 					<icaro:componenteGestionado refId="AgenteAplicacionIdentificador1"
 						tipoComponente="AgenteAplicacion" />
-					<icaro:componenteGestionado refId="AgenteAplicacionDialogoQuedadas"
+					<icaro:componenteGestionado refId="AgenteAplicacionDialogoQuedadas1"
 						tipoComponente="AgenteAplicacion" />
-
+					<!--<icaro:componenteGestionado refId="AgenteAplicacionGestionQuedadas1"
+						tipoComponente="AgenteAplicacion" />
+					-->
 				</icaro:componentesGestionados>
 			</icaro:InstanciaGestor>
 			<icaro:InstanciaGestor id="GestorRecursos"
@@ -113,6 +127,11 @@
 						tipoComponente="RecursoAplicacion" />
 					<icaro:componenteGestionado refId="PersistenciaGrupos1"
 						tipoComponente="RecursoAplicacion" />
+					<!--<icaro:componenteGestionado refId="PersistenciaQuedadas1"
+						tipoComponente="RecursoAplicacion" />
+					<icaro:componenteGestionado refId="PersistenciaMensajesGrupo1"
+						tipoComponente="RecursoAplicacion" />
+					-->
 					<icaro:componenteGestionado refId="RecursoCalendario1"
 						tipoComponente="RecursoAplicacion" />
 				</icaro:componentesGestionados>
@@ -145,12 +164,18 @@
 					<icaro:propiedad atributo="" valor="" />
 				</icaro:listaPropiedades>
 			</icaro:Instancia>
-			<icaro:Instancia id="AgenteAplicacionDialogoQuedadas"
+			<icaro:Instancia id="AgenteAplicacionDialogoQuedadas1"
 				refDescripcion="AgenteAplicacionDialogoQuedadas">
 				<icaro:listaPropiedades>
 					<icaro:propiedad atributo="" valor="" />
 				</icaro:listaPropiedades>
 			</icaro:Instancia>
+			<!--<icaro:Instancia id="AgenteAplicacionGestionQuedadas1"
+				refDescripcion="AgenteAplicacionGestionQuedadas">
+				<icaro:listaPropiedades>
+					<icaro:propiedad atributo="" valor="" />
+				</icaro:listaPropiedades>
+			</icaro:Instancia>-->
 
 		</icaro:AgentesAplicacion>
 		<!--****************************************************************************************************** 
@@ -173,6 +198,11 @@
 				refDescripcion="PersistenciaUsuarios" xsi:type="icaro:Instancia" />
 			<icaro:Instancia id="PersistenciaGrupos1"
 				refDescripcion="PersistenciaGrupos" xsi:type="icaro:Instancia" />
+			<!--<icaro:Instancia id="PersistenciaQuedadas1"
+				refDescripcion="PersistenciaQuedadas" xsi:type="icaro:Instancia" />
+			<icaro:Instancia id="PersistenciaMensajesGrupo1"
+				refDescripcion="PersistenciaMensajesGrupo" xsi:type="icaro:Instancia" />
+				-->
 			<icaro:Instancia id="RecursoCalendario1"
 				refDescripcion="RecursoCalendario" xsi:type="icaro:Instancia" />
 			<icaro:Instancia id="ComunicacionChat1"

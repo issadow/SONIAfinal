@@ -1,7 +1,7 @@
 package icaro.aplicaciones.recursos.comuSONIAChat.imp.util;
 
-
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Event;
 import java.awt.Font;
 import java.awt.GridLayout;
@@ -38,6 +38,7 @@ import javax.swing.text.Element;
 
 
 
+
 public class SONIAUserChat extends JFrame {
 	
 	Queue inputQueue = new Queue();
@@ -71,7 +72,7 @@ public class SONIAUserChat extends JFrame {
 		JPanel panelPrincipal = new JPanel();
 		BorderLayout b = new BorderLayout();
 		panelPrincipal.setLayout(b);
-		
+		panelPrincipal.setBackground(Color.BLUE);
 			JPanel panelSuperior = new JPanel(new GridLayout(1,3));			
 			panelSuperior.add(construyeAreaLenguajeP());
 			panelPrincipal.add("North",labelToken);
@@ -95,7 +96,7 @@ public class SONIAUserChat extends JFrame {
 		areaLenguajeP.setEditable(false);//setEnabled(false);//  enable(true);
 		areaLenguajeP.setFont(new Font("Arial", Font.BOLD,15));
 		JScrollPane scroll = new JScrollPane( areaLenguajeP );
-		
+		areaLenguajeP.setBackground(Color.LIGHT_GRAY);
 		lenguajePPanel.add("Center", scroll);
 		
 		
